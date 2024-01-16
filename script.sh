@@ -17,28 +17,46 @@ centralize_data() {
     }' >> /tmp/psck_current.txt
 }
 
+sendInitialNotifications() {
+    local message="SYSTEM INIT"
+
+    while read -r vmid name status; do
+        # Accumulate initial statuses in message
+        message+="VMID $name($vmid) is currently $status. \n"
+    done < /tmp/psck_current.txt
+
+    # Send a single notification with all initial statuses
+    if [ ! -z "$message" ]; then
+        sendNotification "$message"
+    fi
+}
+
 sendNotification() {
     # Extract the arguments to variables for clarity
-    local vmid="$1"
-    local old_status="$2"
-    local new_status="$3"
+    local message="$1"
+
+    echo "$message"
+    sendCurlNotification "Status Update" "$message"
+}
+
+sendCurlNotification() {
+    local title="$1"
+    local notification_body="$2"
 
     # Use the variables in the curl command
     # Implement Push-A-Tron notifications if you want
     # https://pushatron.com/
-    #curl --location 'https://api.pushatron.com/sendNotifications' \
+
+    # Use the variables in the curl command
+    #curl -s -o /dev/null --location 'https://api.pushatron.com/sendNotifications' \
     #--header 'Content-Type: application/json' \
     #--data '{
-    #    "project": "[PROJECT-ID]",
-    #    "title": "Status Update",
-    #    "message": "Status of VMID '"$vmid"' has changed from '"$old_status"' to '"$new_status"'.",
-    #    "apikey": "[YOUR-API-KEY]"
-    #}' > /dev/null
-
-    echo "Notification: Status of VMID $1 has changed from $2 to $3."
+    #    "title": "'"$title"'",
+    #    "message": "'"$notification_body"'",
+    #    "apikey": "[YOUR-API-KEY]",
+    #    "project": "[PROJECT-ID]"
+    #}'
 }
-
-# Main script starts here
 
 # Centralize current data
 centralize_data
@@ -50,10 +68,18 @@ if [ -f "/tmp/psck_previous.txt" ]; then
         # Look for the same VMID in the previous state
         previous_status=$(grep "^$vmid " /tmp/psck_previous.txt | awk '{print $3}')
         if [ "$previous_status" != "" ] && [ "$status" != "$previous_status" ]; then
-            # Status has changed, call notification function
-            sendNotification "$name($vmid)" "$previous_status" "$status"
+            # Accumulate status changes in message
+            message+="Status of VMID $name($vmid) has changed from $previous_status to $status.\n"
         fi
     done < /tmp/psck_current.txt
+
+    # Send a single notification if there were any changes
+    if [ ! -z "$message" ]; then
+        sendNotification "$message"
+    fi
+else
+    # Since previous state file doesn't exist, send notifications for all VMs
+    sendInitialNotifications    
 fi
 
 # Save current state as previous state for next run
